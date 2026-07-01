@@ -1,0 +1,74 @@
+diff --git a/drivers/gpu/drm/apple/apple_drv.c b/drivers/gpu/drm/apple/apple_drv.c
+index 0f36dad..da27114 100644
+--- a/drivers/gpu/drm/apple/apple_drv.c
++++ b/drivers/gpu/drm/apple/apple_drv.c
+@@ -313,7 +313,15 @@ static int apple_probe_per_dcp(struct device *dev,
+ 		return ret;
+ 
+ 	drm_crtc_helper_add(&crtc->base, &apple_crtc_helper_funcs);
+-	drm_crtc_enable_color_mgmt(&crtc->base, 0, true, 0);
++	/*
++	 * The DCP firmware exposes no arbitrary gamma-LUT IPC, only a 3x3
++	 * colour matrix (iomfb_set_matrix / "A422"). Advertise a 256-entry
++	 * GAMMA_LUT anyway so userspace features gated on gamma support
++	 * (notably GNOME Night Light) become available; the swap builder folds
++	 * the ramp into the matrix diagonal. Non-linear curves (e.g. ICC VCGT
++	 * calibration) collapse to their linear per-channel gain.
++	 */
++	drm_crtc_enable_color_mgmt(&crtc->base, 0, true, 256);
+ 
+ 	enc = drmm_simple_encoder_alloc(drm, struct apple_encoder, base,
+ 					DRM_MODE_ENCODER_TMDS);
+diff --git a/drivers/gpu/drm/apple/iomfb_template.c b/drivers/gpu/drm/apple/iomfb_template.c
+index 553134a..8400915 100644
+--- a/drivers/gpu/drm/apple/iomfb_template.c
++++ b/drivers/gpu/drm/apple/iomfb_template.c
+@@ -12,6 +12,7 @@
+ #include <linux/dma-mapping.h>
+ #include <linux/iommu.h>
+ #include <linux/kref.h>
++#include <linux/math64.h>
+ #include <linux/module.h>
+ #include <linux/of_device.h>
+ #include <linux/pm_runtime.h>
+@@ -1424,6 +1425,40 @@ void DCP_FW_NAME(iomfb_flush)(struct apple_dcp *dcp, struct drm_crtc *crtc, stru
+ 			mat.matrix[0] = mat.matrix[4] = mat.matrix[8] = 1LLU << 32;
+ 		}
+ 
++		/*
++		 * The firmware has no gamma-LUT IPC, so approximate a per-channel
++		 * gamma ramp as a diagonal gain folded into the colour matrix.
++		 * The DRM pipeline is out = GAMMA(CTM(in)), so the combined
++		 * transform is diag(g) * CTM, i.e. scale matrix row i by g[i].
++		 * Exact for the linear ramps used by Night Light; a non-linear
++		 * curve is reduced to its endpoint gain (matrix[] and CTM are
++		 * S31.32, and all Night Light coefficients are positive, so the
++		 * sign bit is preserved and the magnitude scaled).
++		 */
++		if (crtc_state->gamma_lut) {
++			struct drm_color_lut *lut = crtc_state->gamma_lut->data;
++			u32 n = crtc_state->gamma_lut->length / sizeof(*lut);
++
++			if (n) {
++				u64 g[3] = {
++					((u64)lut[n - 1].red   << 32) / 0xffff,
++					((u64)lut[n - 1].green << 32) / 0xffff,
++					((u64)lut[n - 1].blue  << 32) / 0xffff,
++				};
++				int row, col;
++
++				for (row = 0; row < 3; row++) {
++					for (col = 0; col < 3; col++) {
++						u64 *e = &mat.matrix[row * 3 + col];
++						u64 sign = *e & (1ULL << 63);
++
++						*e = sign | mul_u64_u64_shr(*e & ~(1ULL << 63),
++									    g[row], 32);
++					}
++				}
++			}
++		}
++
+ 		iomfb_set_matrix(dcp, false, &mat, do_swap, NULL);
+ 	} else
+ 		do_swap(dcp, NULL, NULL);

@@ -1,0 +1,3 @@
+build/
+*.ko
+*.ko.zst
