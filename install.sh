@@ -64,14 +64,8 @@ sudo cp "$BUILD/appledrm.ko.zst" "$MODDIR/appledrm.ko.zst"
 sudo depmod -a "$KREL"
 
 log "Assigning an sRGB colour profile to the panel (colord) ..."
-DEV="$(colormgr get-devices-by-kind display 2>/dev/null | awk -F': *' '/Object Path/{print $2; exit}')"
-[ -n "${DEV:-}" ] || die "No colord display device found (is a session running?)."
-SRGB="$(colormgr get-standard-space srgb 2>/dev/null | awk -F': *' '/Object Path/{print $2; exit}')"
-[ -n "${SRGB:-}" ] || die "No standard sRGB profile in colord."
-colormgr device-add-profile "$DEV" "$SRGB" >/dev/null 2>&1 || true
-colormgr device-make-profile-default "$DEV" "$SRGB" >/dev/null 2>&1 || true
-log "Assigned sRGB to $DEV"
+"$SCRIPT_DIR/assign-colord-profile.sh"
 
 echo
 log "Done. Reboot to load the patched module, then enable Settings > Display > Night Light."
-warn "Not DKMS-managed - re-run this script after any kernel update."
+warn "Not DKMS-managed - re-run this script after any kernel update, or use ./install-dkms.sh to survive updates automatically."

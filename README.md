@@ -45,24 +45,42 @@ into the DCP colour matrix → panel warms.`
 ```bash
 git clone https://github.com/BuenGenio/asahi-m2-nightlight
 cd asahi-m2-nightlight
-./install.sh          # do NOT run as root; it uses sudo where needed
+```
+
+**Recommended — DKMS** (survives kernel updates automatically):
+
+```bash
+./install-dkms.sh     # do NOT run as root; uses sudo where needed
 # reboot, then: Settings ▸ Display ▸ Night Light
 ```
 
+DKMS rebuilds the patched driver on every kernel update and shadows the stock
+module via `updates/` (no overwrite). Requires `dkms` and network at build time.
+
+**Or — plain install** (must be re-run after each kernel update):
+
+```bash
+./install.sh
+```
+
 Requirements: an Asahi kernel, `linux-headers-$(uname -r)`, and
-`git make gcc zstd colord` installed.
+`git make gcc zstd colord` (+ `dkms` for the recommended path).
 
 ### Reverting
 
 ```bash
-./uninstall.sh        # restores the stock module; reboot
+./uninstall.sh        # dkms remove, or restore the stock module; reboot
 ```
 
 ## Caveats
 
-- **Not DKMS-managed.** The patched module is installed by hand, so a kernel /
-  `linux-modules` package upgrade reverts it. **Re-run `./install.sh` after a
-  kernel update.** (DKMS packaging is a welcome PR.)
+- **Persistence.** Use `./install-dkms.sh` (recommended) and the module is
+  rebuilt automatically on kernel updates. The plain `./install.sh` overwrites
+  the stock module and must be **re-run after every kernel update**.
+- **DKMS tracks the kernel source.** Because the patched module is the whole
+  in-tree `appledrm`, the DKMS `PRE_BUILD` hook (`dkms/pre-build.sh`) fetches the
+  matching driver source for the target kernel and re-applies `nightlight.patch`
+  at build time — so it needs network access during `apt upgrade`.
 - The kernel patch is a self-built, **unsigned** out-of-tree module. It loads
   because Asahi doesn't force module signatures (`module.sig_enforce=N`).
 - Tested on M2 (t8112). The driver change is firmware-version-independent so it
