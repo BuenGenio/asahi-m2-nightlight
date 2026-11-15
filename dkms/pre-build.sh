@@ -12,8 +12,16 @@ set -euo pipefail
 KVER="${1:-${kernelver:-$(uname -r)}}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAJMIN="$(printf '%s' "$KVER" | grep -oE '^[0-9]+\.[0-9]+')"
+VERSION="${KVER%%-*}"
 REPO="${SRC_REPO:-https://github.com/UbuntuAsahi/linux}"
-BRANCH="${SRC_BRANCH:-asahi-arm-${MAJMIN}}"
+if [[ -n "${SRC_BRANCH:-}" ]]; then
+  BRANCH="$SRC_BRANCH"
+elif [[ "$REPO" == "https://github.com/AsahiLinux/linux" ]]; then
+  BRANCH="$(git ls-remote --tags --refs "$REPO" "refs/tags/asahi-${VERSION}-*" | awk '{sub("refs/tags/", "", $2); print $2}' | sort -V | tail -n1)"
+  [[ -n "$BRANCH" ]] || { echo "No Asahi Linux tag found for kernel $VERSION" >&2; exit 1; }
+else
+  BRANCH="asahi-arm-${MAJMIN}"
+fi
 
 echo "appledrm-nightlight: fetching apple-dcp source for ${KVER} ($REPO @ $BRANCH)"
 rm -rf "$HERE/src" "$HERE/.linux"

@@ -18,10 +18,21 @@ NAME="appledrm-nightlight"
 VER="1.0"
 SRC="/usr/src/${NAME}-${VER}"
 
+PKG_MAN="apt"
+PKG="linux-headers-$KREL"
+KDIR="/lib/modules/${KREL}/build"
+REPO_OVERRIDE=""
+if command -v dnf > /dev/null; then
+  PKG_MAN="dnf"
+  PKG=$(dnf repoquery -q --whatprovides "kernel-devel-uname-r = $(uname -r)")
+  KDIR="/usr/src/kernels/$(uname -r)"
+  REPO_OVERRIDE="${SRC_REPO:-https://github.com/AsahiLinux/linux}"
+fi
+
 [ "$(id -u)" -ne 0 ] || die "Do not run as root: colord setup needs your user session (this script uses sudo where needed)."
-case "$KREL" in *-asahi*) : ;; *) die "This is not an Asahi kernel ($KREL)." ;; esac
-command -v dkms >/dev/null || die "dkms not installed. Run: sudo apt install dkms"
-[ -d "/lib/modules/${KREL}/build" ] || die "Kernel headers missing. Install: sudo apt install linux-headers-$KREL"
+case "$KREL" in *asahi*) : ;; *) die "This is not an Asahi kernel ($KREL)." ;; esac
+command -v dkms >/dev/null || die "dkms not installed. Run: sudo $PKG_MAN install dkms"
+[ -d "$KDIR" ] || die "Kernel headers missing. Install: sudo $PKG_MAN install $PKG"
 for t in git make gcc; do command -v "$t" >/dev/null || die "Missing tool: $t"; done
 
 log "Installing DKMS source tree to $SRC ..."
@@ -34,7 +45,7 @@ sudo install -m644 "$SCRIPT_DIR/nightlight.patch" "$SRC/nightlight.patch"
 log "Registering + building + installing via DKMS ..."
 sudo dkms remove -m "$NAME" -v "$VER" --all 2>/dev/null || true
 sudo dkms add    -m "$NAME" -v "$VER"
-sudo dkms build  -m "$NAME" -v "$VER"
+sudo env SRC_REPO="$REPO_OVERRIDE" SRC_BRANCH="${SRC_BRANCH:-}" dkms build  -m "$NAME" -v "$VER" --kernelsourcedir "$KDIR"
 sudo dkms install --force -m "$NAME" -v "$VER"
 
 log "DKMS status:"; dkms status -m "$NAME"

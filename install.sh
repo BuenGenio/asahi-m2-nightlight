@@ -21,21 +21,29 @@ die()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KREL="$(uname -r)"
-KDIR="/lib/modules/${KREL}/build"
 MODDIR="/lib/modules/${KREL}/kernel/drivers/gpu/drm/apple"
 SRC_REPO="${SRC_REPO:-https://github.com/UbuntuAsahi/linux}"
 SRC_BRANCH="${SRC_BRANCH:-asahi-arm-$(echo "$KREL" | grep -oE '^[0-9]+\.[0-9]+')}"
+
+PKG_MAN="apt"
+PKG="linux-headers-$KREL"
+KDIR="/lib/modules/${KREL}/build"
+if command -v dnf > /dev/null; then
+  PKG_MAN="dnf"
+  PKG=$(dnf repoquery -q --whatprovides "kernel-devel-uname-r = $(uname -r)")
+  KDIR="/lib/modules/${KREL}/build"
+fi
 
 [ "$(id -u)" -ne 0 ] || die "Do not run as root: colord setup needs your user session (this script uses sudo only where needed)."
 
 log "Kernel: $KREL"
 case "$KREL" in
-  *-asahi*) : ;;
+  *asahi*) : ;;
   *) die "This is not an Asahi kernel ($KREL)." ;;
 esac
 grep -qai apple /proc/device-tree/compatible 2>/dev/null || warn "Could not confirm Apple hardware; continuing anyway."
 [ -e "$MODDIR/appledrm.ko.zst" ] || die "appledrm module not found at $MODDIR (unexpected kernel layout)."
-[ -d "$KDIR" ] || die "Kernel headers missing. Install: sudo apt install linux-headers-$KREL"
+[ -d "$KDIR" ] || die "Kernel headers missing. Install: sudo $PKG_MAN install $PKG"
 for t in git make gcc zstd strip depmod; do command -v "$t" >/dev/null || die "Missing tool: $t"; done
 command -v colormgr >/dev/null || die "Missing 'colormgr' (install the colord package)."
 
